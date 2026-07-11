@@ -1,0 +1,113 @@
+@page "/habits/new"
+@page "/habits/edit/{HabitId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using HabitTracker.Data
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager NavigationManager
+
+<PageTitle>@(HabitId is null ? "Add Habit" : "Edit Habit")</PageTitle>
+
+<h1>@(HabitId is null ? "Add Habit" : "Edit Habit")</h1>
+
+<EditForm Model="model" OnValidSubmit="HandleSubmit" FormName="habitForm">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+
+    <div class="mb-3">
+        <label class="form-label">Name</label>
+        <InputText class="form-control" @bind-Value="model.Name" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Description</label>
+        <InputTextArea class="form-control" @bind-Value="model.Description" />
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Frequency</label>
+        <InputSelect class="form-select" @bind-Value="model.Frequency">
+            <option value="@HabitFrequency.Daily">Daily</option>
+            <option value="@HabitFrequency.Weekly">Weekly</option>
+        </InputSelect>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Save</button>
+    <a class="btn btn-secondary" href="dashboard">Cancel</a>
+</EditForm>
+
+@code {
+    [Parameter]
+    public int? HabitId { get; set; }
+
+    private HabitFormModel model = new();
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        if (HabitId is not null)
+        {
+            var existing = await Db.Habits.FindAsync(HabitId.Value);
+            if (existing is not null && existing.UserId == userId)
+            {
+                model = new HabitFormModel
+                {
+                    Name = existing.Name,
+                    Description = existing.Description,
+                    Frequency = existing.Frequency
+                };
+            }
+        }
+    }
+
+    private async Task HandleSubmit()
+    {
+        if (userId is null) return;
+
+        if (HabitId is null)
+        {
+            var habit = new Habit
+            {
+                Name = model.Name,
+                Description = model.Description,
+                Frequency = model.Frequency,
+                UserId = userId,
+                CreatedAt = DateTime.UtcNow
+            };
+            Db.Habits.Add(habit);
+        }
+        else
+        {
+            var existing = await Db.Habits.FindAsync(HabitId.Value);
+            if (existing is not null && existing.UserId == userId)
+            {
+                existing.Name = model.Name;
+                existing.Description = model.Description;
+                existing.Frequency = model.Frequency;
+                Db.Habits.Update(existing);
+            }
+        }
+
+        await Db.SaveChangesAsync();
+        NavigationManager.NavigateTo("dashboard");
+    }
+
+    private class HabitFormModel
+    {
+        [System.ComponentModel.DataAnnotations.Required]
+        [System.ComponentModel.DataAnnotations.StringLength(100)]
+        public string Name { get; set; } = string.Empty;
+
+        [System.ComponentModel.DataAnnotations.StringLength(500)]
+        public string? Description { get; set; }
+
+        public HabitFrequency Frequency { get; set; } = HabitFrequency.Daily;
+    }
+}

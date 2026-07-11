@@ -1,0 +1,139 @@
+@page "/dashboard"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using HabitTracker.Data
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+@implements IDisposable
+
+<PageTitle>Dashboard</PageTitle>
+
+<h1>My Habits</h1>
+
+<a class="btn btn-primary mb-3" href="habits/new">+ Add Habit</a>
+
+@if (habits == null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (!habits.Any())
+{
+    <p>You don't have any habits yet. Click <strong>+ Add Habit</strong> to create your first one.</p>
+}
+else
+{
+    <table class="table align-middle">
+        <thead>
+            <tr>
+                <th>Habit</th>
+                <th>Frequency</th>
+                <th>Today</th>
+                <th>Current Streak</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var habit in habits)
+            {
+                var today = DateOnly.FromDateTime(DateTime.Now);
+                var todaysEntry = habit.Entries.FirstOrDefault(e => e.Date == today);
+                var isCompleted = todaysEntry?.Completed ?? false;
+
+                <tr>
+                    <td>
+                        <a href="@($"habits/{habit.Id}")">@habit.Name</a>
+                    </td>
+                    <td>@habit.Frequency</td>
+                    <td>
+                        <input type="checkbox" class="form-check-input"
+                               checked="@isCompleted"
+                               @onchange="@(e => ToggleToday(habit, (bool)e.Value!))" />
+                    </td>
+                    <td>@CalculateStreak(habit)</td>
+                    <td>
+                        <a class="btn btn-sm btn-outline-secondary" href="@($"habits/edit/{habit.Id}")">Edit</a>
+                        <button class="btn btn-sm btn-outline-danger" @onclick="@(() => DeleteHabit(habit.Id))">Delete</button>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<Habit>? habits;
+    private string? userId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        await LoadHabits();
+    }
+
+    private async Task LoadHabits()
+    {
+        if (userId is null)
+        {
+            habits = new();
+            return;
+        }
+
+        habits = await Db.Habits
+            .Where(h => h.UserId == userId)
+            .Include(h => h.Entries)
+            .OrderBy(h => h.Name)
+            .ToListAsync();
+    }
+
+    private async Task ToggleToday(Habit habit, bool completed)
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var entry = habit.Entries.FirstOrDefault(e => e.Date == today);
+
+        if (entry is null)
+        {
+            entry = new HabitEntry { HabitId = habit.Id, Date = today, Completed = completed };
+            Db.HabitEntries.Add(entry);
+        }
+        else
+        {
+            entry.Completed = completed;
+            Db.HabitEntries.Update(entry);
+        }
+
+        await Db.SaveChangesAsync();
+        await LoadHabits();
+    }
+
+    private async Task DeleteHabit(int habitId)
+    {
+        var habit = await Db.Habits.FindAsync(habitId);
+        if (habit is not null)
+        {
+            Db.Habits.Remove(habit);
+            await Db.SaveChangesAsync();
+            await LoadHabits();
+        }
+    }
+
+    private int CalculateStreak(Habit habit)
+    {
+        var streak = 0;
+        var day = DateOnly.FromDateTime(DateTime.Now);
+
+        while (habit.Entries.Any(e => e.Date == day && e.Completed))
+        {
+            streak++;
+            day = day.AddDays(-1);
+        }
+
+        return streak;
+    }
+
+    public void Dispose() { }
+}

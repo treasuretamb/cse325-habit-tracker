@@ -1,0 +1,72 @@
+@page "/habits/{HabitId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using HabitTracker.Data
+@inject ApplicationDbContext Db
+@inject AuthenticationStateProvider AuthStateProvider
+
+<PageTitle>Habit Detail</PageTitle>
+
+@if (habit is null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <h1>@habit.Name</h1>
+    <p>@habit.Description</p>
+    <p><strong>Frequency:</strong> @habit.Frequency</p>
+
+    <h3>Last 14 Days</h3>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Completed</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var day in last14Days)
+            {
+                var entry = habit.Entries.FirstOrDefault(e => e.Date == day);
+                <tr>
+                    <td>@day.ToString("ddd, MMM d")</td>
+                    <td>@((entry?.Completed ?? false) ? "✅" : "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <a class="btn btn-secondary" href="dashboard">Back to Dashboard</a>
+}
+
+@code {
+    [Parameter]
+    public int HabitId { get; set; }
+
+    private Habit? habit;
+    private List<DateOnly> last14Days = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var userId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+
+        var found = await Db.Habits
+            .Include(h => h.Entries)
+            .FirstOrDefaultAsync(h => h.Id == HabitId);
+
+        if (found is not null && found.UserId == userId)
+        {
+            habit = found;
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        last14Days = Enumerable.Range(0, 14)
+            .Select(offset => today.AddDays(-offset))
+            .ToList();
+    }
+}
