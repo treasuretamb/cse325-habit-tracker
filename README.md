@@ -1,5 +1,9 @@
 # Habit Tracker — CSE325 Group Project
 
+## Team Members
+
+- Treasure Tambwanaye — sole active member as of W02
+
 A .NET 8 Blazor Web App (Interactive Server) with ASP.NET Core Identity
 authentication and CRUD habit tracking.
 
